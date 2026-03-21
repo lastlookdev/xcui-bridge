@@ -13,10 +13,7 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "LastLookBridge",
-            linkerSettings: [
-                .linkedFramework("XCTest"),
-            ]
+            name: "LastLookBridge"
         ),
     ]
 )
