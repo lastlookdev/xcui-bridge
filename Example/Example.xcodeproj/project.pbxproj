@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		FEB4D7B82F6FFE65007AEC2D /* LastLookBridge in Frameworks */ = {isa = PBXBuildFile; productRef = FEB4D7B72F6FFE65007AEC2D /* LastLookBridge */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		FEB4D7862F6FFD2A007AEC2D /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -66,6 +70,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FEB4D7B82F6FFE65007AEC2D /* LastLookBridge in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -158,6 +163,7 @@
 			);
 			name = ExampleUITests;
 			packageProductDependencies = (
+				FEB4D7B72F6FFE65007AEC2D /* LastLookBridge */,
 			);
 			productName = ExampleUITests;
 			productReference = FEB4D78F2F6FFD2A007AEC2D /* ExampleUITests.xctest */;
@@ -195,6 +201,9 @@
 			);
 			mainGroup = FEB4D76F2F6FFD29007AEC2D;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				FEB4D7B62F6FFE65007AEC2D /* XCLocalSwiftPackageReference ".." */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = FEB4D7792F6FFD29007AEC2D /* Products */;
 			projectDirPath = "";
@@ -578,6 +587,20 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		FEB4D7B62F6FFE65007AEC2D /* XCLocalSwiftPackageReference ".." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ..;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		FEB4D7B72F6FFE65007AEC2D /* LastLookBridge */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = LastLookBridge;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = FEB4D7702F6FFD29007AEC2D /* Project object */;
 }
