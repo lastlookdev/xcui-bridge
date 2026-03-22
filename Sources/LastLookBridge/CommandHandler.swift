@@ -390,38 +390,43 @@ public class CommandHandler {
     // MARK: - Element Info
 
     private func handleElementInfo(_ command: BridgeCommand) -> BridgeResponse {
-        let element: XCUIElement?
+        let el: XCUIElement
 
         if let identifier = command.params["identifier"]?.value as? String, !identifier.isEmpty {
-            element = findElement(byIdentifier: identifier)
+            // Use .firstMatch to avoid crashes from ambiguous element resolution
+            el = app.descendants(matching: .any)[identifier].firstMatch
         } else if let label = command.params["label"]?.value as? String, !label.isEmpty {
-            element = findElement(byLabel: label)
+            // Search all element types, not just staticTexts
+            el = app.descendants(matching: .any).matching(
+                NSPredicate(format: "label == %@", label)
+            ).firstMatch
         } else {
             return .failure(id: command.id, error: "Must provide identifier or label")
         }
 
-        guard let el = element else {
+        // Use waitForExistence with a short timeout to avoid indefinite hangs
+        let exists = el.waitForExistence(timeout: 3)
+
+        if !exists {
             return .success(id: command.id, data: ["exists": AnyCodable(false)])
         }
 
-        let info: [String: Any] = [
-            "exists": el.exists,
-            "isEnabled": el.isEnabled,
-            "isSelected": el.isSelected,
-            "isHittable": el.isHittable,
-            "label": el.label,
-            "value": el.value as? String ?? "",
-            "identifier": el.identifier,
-            "type": AccessibilityReader.elementTypeName(el.elementType),
-            "frame": [
-                "x": Int(el.frame.origin.x),
-                "y": Int(el.frame.origin.y),
-                "width": Int(el.frame.size.width),
-                "height": Int(el.frame.size.height),
-            ],
-        ]
-
-        return .success(id: command.id, data: info.mapValues { AnyCodable($0) })
+        let frame = el.frame
+        return .success(id: command.id, data: [
+            "exists": AnyCodable(true),
+            "isEnabled": AnyCodable(el.isEnabled),
+            "isHittable": AnyCodable(el.isHittable),
+            "label": AnyCodable(el.label),
+            "value": AnyCodable(el.value as? String ?? ""),
+            "identifier": AnyCodable(el.identifier),
+            "type": AnyCodable(AccessibilityReader.elementTypeName(el.elementType)),
+            "frame": AnyCodable([
+                "x": Int(frame.origin.x),
+                "y": Int(frame.origin.y),
+                "width": Int(frame.size.width),
+                "height": Int(frame.size.height),
+            ] as [String: Any]),
+        ])
     }
 
     // MARK: - Element Count
@@ -452,39 +457,78 @@ public class CommandHandler {
     // MARK: - Dismiss Keyboard
 
     private func handleDismissKeyboard(_ command: BridgeCommand) -> BridgeResponse {
-        // Tap somewhere outside text fields to dismiss
-        let coordinate = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1))
-        coordinate.tap()
-        Thread.sleep(forTimeInterval: 0.3)
-        return .success(id: command.id, data: ["dismissed": AnyCodable(true)])
+        let keyboard = app.keyboards.firstMatch
+        guard keyboard.exists else {
+            return .success(id: command.id, data: [
+                "dismissed": AnyCodable(true),
+                "keyboardWasVisible": AnyCodable(false),
+            ])
+        }
+
+        // Strategy 1: Tap a neutral coordinate (y=0.25 avoids nav bars at top)
+        let coord = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25))
+        coord.tap()
+        Thread.sleep(forTimeInterval: 0.5)
+
+        // Strategy 2: If keyboard still visible, try keyboard action buttons
+        if app.keyboards.firstMatch.exists {
+            let buttonNames = ["Done", "Return", "Search", "Go", "Send"]
+            for name in buttonNames {
+                let button = app.keyboards.buttons[name]
+                if button.exists {
+                    button.tap()
+                    Thread.sleep(forTimeInterval: 0.3)
+                    break
+                }
+            }
+        }
+
+        let stillVisible = app.keyboards.firstMatch.exists
+        return .success(id: command.id, data: [
+            "dismissed": AnyCodable(!stillVisible),
+            "keyboardWasVisible": AnyCodable(true),
+            "keyboardStillVisible": AnyCodable(stillVisible),
+        ])
     }
 
     // MARK: - Element Finding
 
+    /// Short timeout for element existence checks to prevent hanging
+    /// when alerts or other modals are presented.
+    private static let findTimeout: TimeInterval = 3
+
+    /// Modal containers that live in separate window hierarchies.
+    /// Querying app.descendants while these are presented can hang,
+    /// so we check them first with short timeouts.
+    private var modalQueries: [XCUIElementQuery] {
+        [app.alerts, app.sheets, app.popovers, app.menus, app.datePickers]
+    }
+
     private func findElement(byIdentifier identifier: String) -> XCUIElement? {
-        let element = app.descendants(matching: .any)[identifier]
-        return element.exists ? element : nil
+        // Check modal containers first (alerts, sheets, popovers, menus, date pickers)
+        // since their elements aren't accessible via app.descendants
+        for query in modalQueries {
+            let match = query.descendants(matching: .any)[identifier].firstMatch
+            if match.waitForExistence(timeout: 0.5) { return match }
+        }
+
+        // Then search the main app hierarchy
+        let element = app.descendants(matching: .any)[identifier].firstMatch
+        return element.waitForExistence(timeout: Self.findTimeout) ? element : nil
     }
 
     private func findElement(byLabel label: String) -> XCUIElement? {
-        let types: [XCUIElement.ElementType] = [
-            .button, .staticText, .cell, .link, .image,
-            .textField, .secureTextField, .switch, .slider,
-        ]
+        let predicate = NSPredicate(format: "label == %@", label)
 
-        for type in types {
-            let query = app.descendants(matching: type).matching(
-                NSPredicate(format: "label == %@", label)
-            )
-            if query.count > 0 {
-                return query.element(boundBy: 0)
-            }
+        // Check modal containers first
+        for query in modalQueries {
+            let match = query.descendants(matching: .any).matching(predicate).firstMatch
+            if match.waitForExistence(timeout: 0.5) { return match }
         }
 
-        let allQuery = app.descendants(matching: .any).matching(
-            NSPredicate(format: "label == %@", label)
-        )
-        return allQuery.count > 0 ? allQuery.element(boundBy: 0) : nil
+        // Then search the main app hierarchy
+        let element = app.descendants(matching: .any).matching(predicate).firstMatch
+        return element.waitForExistence(timeout: Self.findTimeout) ? element : nil
     }
 
     private func findElement(byType typeName: String, index: Int) -> XCUIElement? {
