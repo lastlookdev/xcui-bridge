@@ -174,7 +174,42 @@ public class CommandHandler {
 
     private func handleReadTree(_ command: BridgeCommand) -> BridgeResponse {
         let depth = (command.params["depth"]?.value as? Int) ?? 5
-        let tree = AccessibilityReader.readTree(root: app, maxDepth: depth)
+        var tree = AccessibilityReader.readTree(root: app, maxDepth: depth)
+
+        // Also read modal containers that live outside app's child hierarchy
+        let modalTypes: [(String, XCUIElementQuery)] = [
+            ("alert", app.alerts),
+            ("sheet", app.sheets),
+            ("popover", app.popovers),
+            ("menu", app.menus),
+            ("datePicker", app.datePickers),
+        ]
+        for (typeName, query) in modalTypes {
+            let count = query.count
+            for i in 0..<count {
+                let modal = query.element(boundBy: i)
+                guard modal.exists else { continue }
+                var modalNode: [String: Any] = [
+                    "type": typeName,
+                    "identifier": modal.identifier,
+                    "label": modal.label,
+                    "value": modal.value as? String ?? "",
+                    "frame": [
+                        "x": Int(modal.frame.origin.x),
+                        "y": Int(modal.frame.origin.y),
+                        "width": Int(modal.frame.size.width),
+                        "height": Int(modal.frame.size.height),
+                    ],
+                    "isEnabled": modal.isEnabled,
+                ]
+                let children = AccessibilityReader.readTree(root: modal, maxDepth: depth)
+                if !children.isEmpty {
+                    modalNode["children"] = children
+                }
+                tree.append(modalNode)
+            }
+        }
+
         return .success(id: command.id, data: ["tree": AnyCodable(tree)])
     }
 
