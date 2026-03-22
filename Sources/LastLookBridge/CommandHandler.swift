@@ -124,6 +124,9 @@ public class CommandHandler {
         if let elementId = command.params["element"]?.value as? String, !elementId.isEmpty,
            let el = findElement(byIdentifier: elementId), el.exists {
             target = el
+        } else if let label = command.params["label"]?.value as? String, !label.isEmpty,
+                  let el = findElement(byLabel: label), el.exists {
+            target = el
         } else {
             target = app
         }
