@@ -397,6 +397,10 @@ public class CommandHandler {
     }
 
     // MARK: - Pinch
+    // Note: XCUITest's pinch(withScale:velocity:) may not trigger SwiftUI's
+    // MagnifyGesture inside Form/List containers due to gesture conflict with
+    // the scroll view. For reliable pinch testing, place pinchable views outside
+    // of scroll containers, or use buttons to simulate zoom changes.
 
     private func handlePinch(_ command: BridgeCommand) -> BridgeResponse {
         let scale = (command.params["scale"]?.value as? Double) ?? 2.0
