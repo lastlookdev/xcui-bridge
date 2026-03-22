@@ -3,12 +3,12 @@
 import PackageDescription
 
 let package = Package(
-    name: "LastLookBridge",
+    name: "XCUIBridge",
     platforms: [.iOS(.v16)],
     products: [
         .library(
-            name: "LastLookBridge",
-            targets: ["LastLookBridge"]
+            name: "XCUIBridge",
+            targets: ["XCUIBridge"]
         ),
     ],
     targets: [
@@ -17,7 +17,7 @@ let package = Package(
             publicHeadersPath: "include"
         ),
         .target(
-            name: "LastLookBridge",
+            name: "XCUIBridge",
             dependencies: ["ObjCExceptionCatcher"]
         ),
     ]

@@ -1,6 +1,6 @@
 import Foundation
 
-/// File-based IPC server for the LastLook bridge.
+/// File-based IPC server for the XCUIBridge.
 ///
 /// Communication protocol:
 /// 1. MCP server writes command JSON to `/tmp/xcuitest-bridge/command.json`
