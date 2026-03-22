@@ -13,7 +13,12 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "LastLookBridge"
+            name: "ObjCExceptionCatcher",
+            publicHeadersPath: "include"
+        ),
+        .target(
+            name: "LastLookBridge",
+            dependencies: ["ObjCExceptionCatcher"]
         ),
     ]
 )

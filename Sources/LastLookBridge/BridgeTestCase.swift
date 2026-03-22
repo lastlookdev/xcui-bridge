@@ -1,5 +1,6 @@
 #if canImport(XCTest)
 import XCTest
+import ObjCExceptionCatcher
 
 /// Base test case that runs the LastLook bridge command loop.
 ///
@@ -54,8 +55,20 @@ open class BridgeTestCase: XCTestCase {
             if let command = server.readCommand() {
                 print("LastLookBridge: received command: \(command.command)")
 
-                let response = handler.execute(command)
-                server.writeResponse(response)
+                var response: BridgeResponse?
+                let exceptionMessage = LLBTryObjC {
+                    response = handler.execute(command)
+                }
+
+                if let exceptionMessage {
+                    print("LastLookBridge: caught ObjC exception: \(exceptionMessage)")
+                    response = .failure(
+                        id: command.id,
+                        error: "Internal error: \(exceptionMessage)"
+                    )
+                }
+
+                server.writeResponse(response ?? .failure(id: command.id, error: "Unknown error"))
 
                 if command.command == "quit" {
                     running = false
