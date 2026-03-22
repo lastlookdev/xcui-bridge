@@ -267,12 +267,7 @@ public class CommandHandler {
             return .failure(id: command.id, error: "Element not found")
         }
 
-        // Use coordinate-based press to avoid XCUITest waiting for app idle
-        // (context menus and animations can cause indefinite waits)
-        let coordinate = el.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-        coordinate.press(forDuration: duration)
-        // Brief wait for any resulting UI to appear
-        Thread.sleep(forTimeInterval: 0.5)
+        el.press(forDuration: duration)
         return .success(id: command.id, data: ["longPressed": AnyCodable(true)])
     }
 
