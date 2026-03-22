@@ -202,7 +202,6 @@
 			mainGroup = FEB4D76F2F6FFD29007AEC2D;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				FEB4D7B62F6FFE65007AEC2D /* XCLocalSwiftPackageReference ".." */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = FEB4D7792F6FFD29007AEC2D /* Products */;
@@ -587,13 +586,6 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
-
-/* Begin XCLocalSwiftPackageReference section */
-		FEB4D7B62F6FFE65007AEC2D /* XCLocalSwiftPackageReference ".." */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = ..;
-		};
-/* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
 		FEB4D7B72F6FFE65007AEC2D /* LastLookBridge */ = {

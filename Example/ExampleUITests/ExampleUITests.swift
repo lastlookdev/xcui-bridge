@@ -1,3 +1,3 @@
-import LastLookBridge
+import XCTest
 
-class DemoTest: BridgeTestCase {}
+class DemoTest: XCTestCase {}
