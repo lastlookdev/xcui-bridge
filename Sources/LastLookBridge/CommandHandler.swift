@@ -49,6 +49,8 @@ public class CommandHandler {
             return handleElementCount(command)
         case "dismiss_keyboard":
             return handleDismissKeyboard(command)
+        case "dismiss_modal":
+            return handleDismissModal(command)
         case "quit":
             return .success(id: command.id, data: ["quit": AnyCodable(true)])
         default:
@@ -531,6 +533,86 @@ public class CommandHandler {
             "dismissed": AnyCodable(!stillVisible),
             "keyboardWasVisible": AnyCodable(true),
             "keyboardStillVisible": AnyCodable(stillVisible),
+        ])
+    }
+
+    // MARK: - Dismiss Modal
+
+    private func handleDismissModal(_ command: BridgeCommand) -> BridgeResponse {
+        var dismissed = false
+        var modalType = "none"
+
+        // Strategy 1: Dismiss alerts by tapping common button labels
+        let alert = app.alerts.firstMatch
+        if alert.waitForExistence(timeout: 0.5) {
+            modalType = "alert"
+            let buttonNames = ["OK", "Cancel", "Done", "Close", "Dismiss", "Yes", "No", "Got it"]
+            for name in buttonNames {
+                let button = alert.buttons[name]
+                if button.exists {
+                    button.tap()
+                    dismissed = true
+                    break
+                }
+            }
+            // Fallback: tap the first button in the alert
+            if !dismissed {
+                let firstButton = alert.buttons.element(boundBy: 0)
+                if firstButton.exists {
+                    firstButton.tap()
+                    dismissed = true
+                }
+            }
+        }
+
+        // Strategy 2: Dismiss sheets by swiping down or tapping close buttons
+        if !dismissed {
+            let sheet = app.sheets.firstMatch
+            if sheet.waitForExistence(timeout: 0.5) {
+                modalType = "sheet"
+                let buttonNames = ["Cancel", "Done", "Close", "Dismiss"]
+                for name in buttonNames {
+                    let button = sheet.buttons[name]
+                    if button.exists {
+                        button.tap()
+                        dismissed = true
+                        break
+                    }
+                }
+                if !dismissed {
+                    // Swipe down to dismiss
+                    sheet.swipeDown()
+                    dismissed = true
+                }
+            }
+        }
+
+        // Strategy 3: Dismiss popovers by tapping outside
+        if !dismissed {
+            let popover = app.popovers.firstMatch
+            if popover.waitForExistence(timeout: 0.5) {
+                modalType = "popover"
+                // Tap outside the popover to dismiss
+                let coord = app.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.1))
+                coord.tap()
+                dismissed = true
+            }
+        }
+
+        // Strategy 4: Dismiss context menus by tapping outside
+        if !dismissed {
+            let menu = app.menus.firstMatch
+            if menu.waitForExistence(timeout: 0.5) {
+                modalType = "menu"
+                let coord = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1))
+                coord.tap()
+                dismissed = true
+            }
+        }
+
+        return .success(id: command.id, data: [
+            "dismissed": AnyCodable(dismissed),
+            "modalType": AnyCodable(modalType),
         ])
     }
 
