@@ -78,7 +78,18 @@ public class CommandHandler {
             return .failure(id: command.id, error: "Element not found")
         }
 
-        el.tap()
+        // For Switch elements in Forms, tapping the row center hits the label
+        // instead of the switch control. Tap the inner switch sub-element.
+        if el.elementType == .switch {
+            let innerSwitch = el.switches.firstMatch
+            if innerSwitch.exists {
+                innerSwitch.tap()
+            } else {
+                el.tap()
+            }
+        } else {
+            el.tap()
+        }
         return .success(id: command.id, data: [
             "tapped": AnyCodable(true),
             "element": AnyCodable(el.debugDescription),
