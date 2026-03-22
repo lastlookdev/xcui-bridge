@@ -38,8 +38,17 @@ open class BridgeTestCase: XCTestCase {
         let app = XCUIApplication(bundleIdentifier: bundleId)
         app.launch()
 
-        // Wait for app to settle
+        // Wait for app to settle and verify it launched
         Thread.sleep(forTimeInterval: 1.0)
+        guard app.state == .runningForeground else {
+            print("LastLookBridge: app failed to launch (state: \(app.state.rawValue))")
+            let server = BridgeServer()
+            server.signalReady()
+            // Write an error that the MCP server can detect
+            server.writeResponse(.failure(id: "launch", error: "App \(bundleId) failed to launch"))
+            return
+        }
+        print("LastLookBridge: app launched successfully")
 
         // 3. Initialize bridge components
         let server = BridgeServer()
