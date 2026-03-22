@@ -658,9 +658,21 @@ public class CommandHandler {
 
     private func findElement(byType typeName: String, index: Int) -> XCUIElement? {
         let type = elementType(from: typeName)
+
+        // Check modal containers first
+        for query in modalQueries {
+            let modalQuery = query.descendants(matching: type)
+            if index < modalQuery.count {
+                let el = modalQuery.element(boundBy: index)
+                if el.waitForExistence(timeout: 0.5) { return el }
+            }
+        }
+
+        // Then search the main app hierarchy
         let query = app.descendants(matching: type)
         guard index < query.count else { return nil }
-        return query.element(boundBy: index)
+        let el = query.element(boundBy: index)
+        return el.waitForExistence(timeout: Self.findTimeout) ? el : nil
     }
 
     private func elementType(from name: String) -> XCUIElement.ElementType {
