@@ -252,36 +252,44 @@ public class CommandHandler {
     private func handleWaitFor(_ command: BridgeCommand) -> BridgeResponse {
         let timeout = (command.params["timeout"]?.value as? Int) ?? 10
 
-        let predicate: NSPredicate
-        let element: XCUIElement
+        // Build a list of elements to check — modals first, then main hierarchy
+        var candidates: [XCUIElement] = []
 
         if let identifier = command.params["identifier"]?.value as? String, !identifier.isEmpty {
-            element = app.descendants(matching: .any)[identifier]
-            predicate = NSPredicate(format: "exists == true")
+            for query in modalQueries {
+                candidates.append(query.descendants(matching: .any)[identifier].firstMatch)
+            }
+            candidates.append(app.descendants(matching: .any)[identifier].firstMatch)
         } else if let label = command.params["label"]?.value as? String, !label.isEmpty {
-            element = app.staticTexts[label]
-            predicate = NSPredicate(format: "exists == true")
+            let predicate = NSPredicate(format: "label == %@", label)
+            for query in modalQueries {
+                candidates.append(query.descendants(matching: .any).matching(predicate).firstMatch)
+            }
+            candidates.append(app.descendants(matching: .any).matching(predicate).firstMatch)
         } else {
             return .failure(id: command.id, error: "Must provide identifier or label")
         }
 
-        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
-        let result = XCTWaiter.wait(for: [expectation], timeout: TimeInterval(timeout))
-
-        if result == .completed {
-            let nodeData: [String: Any] = [
-                "type": AccessibilityReader.elementTypeName(element.elementType),
-                "identifier": element.identifier,
-                "label": element.label,
-                "value": element.value as? String ?? "",
-            ]
-            return .success(id: command.id, data: [
-                "found": AnyCodable(true),
-                "element": AnyCodable(nodeData),
-            ])
-        } else {
-            return .success(id: command.id, data: ["found": AnyCodable(false)])
+        // Poll candidates until one exists or timeout
+        let deadline = Date().addingTimeInterval(TimeInterval(timeout))
+        while Date() < deadline {
+            for candidate in candidates {
+                if candidate.waitForExistence(timeout: 0.3) {
+                    let nodeData: [String: Any] = [
+                        "type": AccessibilityReader.elementTypeName(candidate.elementType),
+                        "identifier": candidate.identifier,
+                        "label": candidate.label,
+                        "value": candidate.value as? String ?? "",
+                    ]
+                    return .success(id: command.id, data: [
+                        "found": AnyCodable(true),
+                        "element": AnyCodable(nodeData),
+                    ])
+                }
+            }
         }
+
+        return .success(id: command.id, data: ["found": AnyCodable(false)])
     }
 
     // MARK: - Long Press
