@@ -3,43 +3,43 @@ import Foundation
 /// File-based IPC server for the XCUIBridge.
 ///
 /// Communication protocol:
-/// 1. MCP server writes command JSON to `/tmp/xcuitest-bridge/command.json`
+/// 1. MCP server writes command JSON to the bridge directory's `command.json`
 /// 2. Bridge reads, deletes, and executes it
-/// 3. Bridge writes result to `/tmp/xcuitest-bridge/response.json`
+/// 3. Bridge writes result to `response.json`
 /// 4. MCP server reads and deletes the response
-public class BridgeServer {
+public final class BridgeServer {
 
-    private let bridgeDir = "/tmp/xcuitest-bridge"
-    private let commandFile: String
-    private let responseFile: String
-    private let readyFile: String
+    private let bridgeDirectory: URL
+    private var commandFileURL: URL { bridgeDirectory.appendingPathComponent("command.json") }
+    private var responseFileURL: URL { bridgeDirectory.appendingPathComponent("response.json") }
+    private var readyFileURL: URL { bridgeDirectory.appendingPathComponent("ready") }
+    private var configFileURL: URL { bridgeDirectory.appendingPathComponent("config.json") }
 
-    public init() {
-        commandFile = "\(bridgeDir)/command.json"
-        responseFile = "\(bridgeDir)/response.json"
-        readyFile = "\(bridgeDir)/ready"
+    public init(directory: URL = URL(fileURLWithPath: "/tmp/xcuitest-bridge")) {
+        self.bridgeDirectory = directory
     }
 
     /// Create the bridge directory and signal readiness.
     public func signalReady() {
-        let fm = FileManager.default
-        try? fm.createDirectory(atPath: bridgeDir, withIntermediateDirectories: true)
-        fm.createFile(atPath: readyFile, contents: Data())
+        try? FileManager.default.createDirectory(
+            at: bridgeDirectory,
+            withIntermediateDirectories: true
+        )
+        FileManager.default.createFile(atPath: readyFileURL.path, contents: Data())
     }
 
-    /// Poll for an incoming command. Returns nil if no command is waiting.
+    /// Poll for an incoming command. Returns `nil` if no command is waiting.
     public func readCommand() -> BridgeCommand? {
         let fm = FileManager.default
-        guard fm.fileExists(atPath: commandFile) else { return nil }
+        let url = commandFileURL
+        guard fm.fileExists(atPath: url.path) else { return nil }
 
         do {
-            let data = try Data(contentsOf: URL(fileURLWithPath: commandFile))
-            try fm.removeItem(atPath: commandFile)
-            let command = try JSONDecoder().decode(BridgeCommand.self, from: data)
-            return command
+            let data = try Data(contentsOf: url)
+            try fm.removeItem(at: url)
+            return try JSONDecoder().decode(BridgeCommand.self, from: data)
         } catch {
-            // Clean up malformed command file
-            try? fm.removeItem(atPath: commandFile)
+            try? fm.removeItem(at: url)
             print("BridgeServer: failed to read command: \(error)")
             return nil
         }
@@ -49,7 +49,7 @@ public class BridgeServer {
     public func writeResponse(_ response: BridgeResponse) {
         do {
             let data = try JSONEncoder().encode(response)
-            try data.write(to: URL(fileURLWithPath: responseFile))
+            try data.write(to: responseFileURL)
         } catch {
             print("BridgeServer: failed to write response: \(error)")
         }
@@ -57,12 +57,13 @@ public class BridgeServer {
 
     /// Read the target bundle ID from the config file written by the MCP server.
     public func readBundleId() -> String? {
-        let configPath = "\(bridgeDir)/config.json"
-        guard let data = FileManager.default.contents(atPath: configPath),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let id = json["bundleId"] as? String else {
-            return nil
-        }
-        return id
+        guard let data = try? Data(contentsOf: configFileURL) else { return nil }
+        return try? JSONDecoder().decode(BridgeConfig.self, from: data).bundleId
     }
+}
+
+// MARK: - Config
+
+private struct BridgeConfig: Codable {
+    let bundleId: String
 }

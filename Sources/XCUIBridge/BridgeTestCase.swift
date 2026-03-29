@@ -18,19 +18,16 @@ open class BridgeTestCase: XCTestCase {
         continueAfterFailure = true
     }
 
-    /// The main bridge test — starts a command loop that listens for
+    /// The main bridge test -- starts a command loop that listens for
     /// instructions from the iOS MCP server.
     open func testBridge() throws {
+        let server = BridgeServer()
+
         // 1. Read target bundle ID from config file (written by MCP server),
         //    falling back to environment variable
-        let bundleId: String = {
-            let server = BridgeServer()
-            if let id = server.readBundleId() {
-                return id
-            }
-            return ProcessInfo.processInfo.environment["TARGET_BUNDLE_ID"]
-                ?? "com.apple.Preferences"
-        }()
+        let bundleId = server.readBundleId()
+            ?? ProcessInfo.processInfo.environment["TARGET_BUNDLE_ID"]
+            ?? "com.apple.Preferences"
 
         print("XCUIBridge: starting bridge for \(bundleId)")
 
@@ -42,16 +39,13 @@ open class BridgeTestCase: XCTestCase {
         Thread.sleep(forTimeInterval: 1.0)
         guard app.state == .runningForeground else {
             print("XCUIBridge: app failed to launch (state: \(app.state.rawValue))")
-            let server = BridgeServer()
             server.signalReady()
-            // Write an error that the MCP server can detect
             server.writeResponse(.failure(id: "launch", error: "App \(bundleId) failed to launch"))
             return
         }
         print("XCUIBridge: app launched successfully")
 
-        // 3. Initialize bridge components
-        let server = BridgeServer()
+        // 3. Initialize the command handler
         let handler = CommandHandler(app: app)
 
         // 4. Signal that the bridge is ready
@@ -79,12 +73,12 @@ open class BridgeTestCase: XCTestCase {
 
                 server.writeResponse(response ?? .failure(id: command.id, error: "Unknown error"))
 
-                if command.command == "quit" {
+                if command.commandName == .quit {
                     running = false
                 }
             }
 
-            // Poll interval — 100ms
+            // Poll interval -- 100ms
             Thread.sleep(forTimeInterval: 0.1)
         }
 
