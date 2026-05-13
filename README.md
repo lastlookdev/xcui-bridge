@@ -51,6 +51,28 @@ import XCUIBridge
 final class MyBridgeTests: BridgeTestCase {}
 ```
 
+Then register the runner once with `ios-mcp-server`:
+
+```sh
+ios-mcp-server app add \
+  --bundle-id com.example.App \
+  --project /path/to/MyApp.xcodeproj \
+  --scheme MyApp \
+  --runner-scheme MyAppUITests \
+  --runner-test-identifier MyAppUITests/MyBridgeTests/testBridge
+```
+
+Agents can then start the bridge with only the simulator and app bundle ID:
+
+```json
+{
+  "device": "iPhone 17 Pro",
+  "bundle_id": "com.example.App"
+}
+```
+
+Use `--workspace` when `--project` points to a `.xcworkspace`. If the runner lives in a different project, pass `--runner-project` and `--runner-workspace` when needed.
+
 The `ObjCExceptionCatcher` target wraps command execution to catch NSExceptions that would otherwise crash the test runner.
 
 ## Requirements
