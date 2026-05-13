@@ -38,9 +38,9 @@ open class BridgeTestCase: XCTestCase {
         // Wait for app to settle and verify it launched
         Thread.sleep(forTimeInterval: 1.0)
         guard app.state == .runningForeground else {
-            print("XCUIBridge: app failed to launch (state: \(app.state.rawValue))")
-            server.signalReady()
-            server.writeResponse(.failure(id: "launch", error: "App \(bundleId) failed to launch"))
+            let message = "App \(bundleId) failed to launch (state: \(app.state.rawValue))"
+            print("XCUIBridge: \(message)")
+            XCTFail(message)
             return
         }
         print("XCUIBridge: app launched successfully")
