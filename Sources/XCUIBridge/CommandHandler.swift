@@ -362,8 +362,7 @@ public final class CommandHandler {
                 if picker.exists {
                     let firstWheel = picker.pickerWheels.element(boundBy: 0)
                     if firstWheel.exists {
-                        firstWheel.adjust(toPickerWheelValue: targetValue)
-                        return .success(id: command.id, data: ["adjusted": true])
+                        return adjustPickerWheel(firstWheel, to: targetValue, commandID: command.id)
                     }
                 }
                 return .failure(id: command.id, error: "Picker not found")
@@ -376,8 +375,23 @@ public final class CommandHandler {
             return .failure(id: command.id, error: "Picker wheel not found")
         }
 
+        return adjustPickerWheel(wheel, to: targetValue, commandID: command.id)
+    }
+
+    private func adjustPickerWheel(
+        _ wheel: XCUIElement,
+        to targetValue: String,
+        commandID: String
+    ) -> BridgeResponse {
+        #if os(iOS)
         wheel.adjust(toPickerWheelValue: targetValue)
-        return .success(id: command.id, data: ["adjusted": true])
+        return .success(id: commandID, data: ["adjusted": true])
+        #else
+        return .failure(
+            id: commandID,
+            error: "Picker wheel adjustment is only available in iOS UI test targets"
+        )
+        #endif
     }
 
     // Note: XCUITest's pinch(withScale:velocity:) may not trigger SwiftUI's
@@ -396,8 +410,15 @@ public final class CommandHandler {
             target = app
         }
 
+        #if os(iOS)
         target.pinch(withScale: CGFloat(scale), velocity: CGFloat(velocity))
         return .success(id: command.id, data: ["pinched": true])
+        #else
+        return .failure(
+            id: command.id,
+            error: "Pinch gestures are only available in iOS UI test targets"
+        )
+        #endif
     }
 
     private func handleDrag(_ command: BridgeCommand) -> BridgeResponse {
