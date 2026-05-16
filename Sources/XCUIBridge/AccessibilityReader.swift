@@ -116,11 +116,25 @@ public enum AccessibilityReader {
         case "image": .image
         case "cell": .cell
         case "table": .table
+        case "collectionview": .collectionView
         case "scrollview": .scrollView
+        case "textview": .textView
         case "switch", "toggle": .switch
         case "slider": .slider
+        case "picker": .picker
+        case "pickerwheel": .pickerWheel
+        case "pageindicator": .pageIndicator
+        case "activityindicator": .activityIndicator
+        case "segmentedcontrol": .segmentedControl
+        case "alert": .alert
+        case "sheet": .sheet
+        case "popover": .popover
+        case "menu": .menu
+        case "menuitem": .menuItem
+        case "datepicker": .datePicker
         case "link": .link
         case "navigationbar": .navigationBar
+        case "toolbar": .toolbar
         case "tabbar": .tabBar
         case "searchfield": .searchField
         default: .any

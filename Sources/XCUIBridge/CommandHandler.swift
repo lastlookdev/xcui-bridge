@@ -5,6 +5,7 @@ import XCTest
 public final class CommandHandler {
 
     private var app: XCUIApplication
+    private let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
 
     public init(app: XCUIApplication) {
         self.app = app
@@ -51,14 +52,14 @@ public final class CommandHandler {
     private func resolveElement(from command: BridgeCommand) -> ElementResult {
         if let identifier = command.params["identifier"]?.stringValue, !identifier.isEmpty {
             guard let el = findElement(byIdentifier: identifier), el.exists else {
-                return .error(.failure(id: command.id, error: "Element not found"))
+                return .error(elementNotFoundResponse(id: command.id))
             }
             return .found(el)
         }
 
         if let label = command.params["label"]?.stringValue, !label.isEmpty {
             guard let el = findElement(byLabel: label), el.exists else {
-                return .error(.failure(id: command.id, error: "Element not found"))
+                return .error(elementNotFoundResponse(id: command.id))
             }
             return .found(el)
         }
@@ -66,7 +67,7 @@ public final class CommandHandler {
         if let typeName = command.params["elementType"]?.stringValue,
            let index = command.params["index"]?.intValue {
             guard let el = findElement(byType: typeName, index: index), el.exists else {
-                return .error(.failure(id: command.id, error: "Element not found"))
+                return .error(elementNotFoundResponse(id: command.id))
             }
             return .found(el)
         }
@@ -198,21 +199,14 @@ public final class CommandHandler {
         var nodes = AccessibilityReader.readTree(root: app, maxDepth: depth)
 
         // Also read modal containers that live outside app's child hierarchy
-        let modalTypes: [(String, XCUIElementQuery)] = [
-            ("alert", app.alerts),
-            ("sheet", app.sheets),
-            ("popover", app.popovers),
-            ("menu", app.menus),
-            ("datePicker", app.datePickers),
-        ]
-
-        for (typeName, query) in modalTypes {
+        for modalQuery in modalQueries {
+            let query = modalQuery.query
             for i in 0..<query.count {
                 let modal = query.element(boundBy: i)
                 guard modal.exists else { continue }
                 let children = AccessibilityReader.readTree(root: modal, maxDepth: depth)
                 let node = ElementNode(
-                    type: typeName,
+                    type: modalQuery.typeName,
                     identifier: modal.identifier,
                     label: modal.label,
                     value: modal.value as? String ?? "",
@@ -268,19 +262,22 @@ public final class CommandHandler {
     private func handleWaitFor(_ command: BridgeCommand) -> BridgeResponse {
         let timeout = command.params["timeout"]?.intValue ?? 10
 
-        var candidates: [XCUIElement] = []
+        var modalCandidates: [XCUIElement] = []
+        var appCandidates: [XCUIElement] = []
 
         if let identifier = command.params["identifier"]?.stringValue, !identifier.isEmpty {
             for query in modalQueries {
-                candidates.append(query.descendants(matching: .any)[identifier].firstMatch)
+                modalCandidates.append(query.query.descendants(matching: .any)[identifier].firstMatch)
             }
-            candidates.append(app.descendants(matching: .any)[identifier].firstMatch)
+            appCandidates.append(app.descendants(matching: .any)[identifier].firstMatch)
         } else if let label = command.params["label"]?.stringValue, !label.isEmpty {
             let predicate = NSPredicate(format: "label == %@", label)
             for query in modalQueries {
-                candidates.append(query.descendants(matching: .any).matching(predicate).firstMatch)
+                modalCandidates.append(
+                    query.query.descendants(matching: .any).matching(predicate).firstMatch
+                )
             }
-            candidates.append(app.descendants(matching: .any).matching(predicate).firstMatch)
+            appCandidates.append(app.descendants(matching: .any).matching(predicate).firstMatch)
         } else {
             return .failure(id: command.id, error: "Must provide identifier or label")
         }
@@ -288,23 +285,36 @@ public final class CommandHandler {
         // Poll candidates until one exists or timeout
         let deadline = Date().addingTimeInterval(TimeInterval(timeout))
         while Date() < deadline {
-            for candidate in candidates {
+            for candidate in modalCandidates {
                 if candidate.waitForExistence(timeout: 0.3) {
-                    let nodeInfo: [String: JSONValue] = [
-                        "type": .string(AccessibilityReader.elementTypeName(candidate.elementType)),
-                        "identifier": .string(candidate.identifier),
-                        "label": .string(candidate.label),
-                        "value": .string(candidate.value as? String ?? ""),
-                    ]
                     return .success(id: command.id, data: [
                         "found": true,
-                        "element": .object(nodeInfo),
+                        "element": elementInfo(candidate),
+                    ])
+                }
+            }
+
+            if activeBlockingModal() != nil {
+                Thread.sleep(forTimeInterval: 0.1)
+                continue
+            }
+
+            for candidate in appCandidates {
+                if candidate.waitForExistence(timeout: 0.3) {
+                    return .success(id: command.id, data: [
+                        "found": true,
+                        "element": elementInfo(candidate),
                     ])
                 }
             }
         }
 
-        return .success(id: command.id, data: ["found": false])
+        var data: [String: JSONValue] = ["found": false]
+        if let message = blockingModalMessage() {
+            data["blocked"] = true
+            data["message"] = .string(message)
+        }
+        return .success(id: command.id, data: data)
     }
 
     // MARK: - Gestures
@@ -443,22 +453,23 @@ public final class CommandHandler {
     // MARK: - Element Info
 
     private func handleElementInfo(_ command: BridgeCommand) -> BridgeResponse {
-        let el: XCUIElement
+        let el: XCUIElement?
 
         if let identifier = command.params["identifier"]?.stringValue, !identifier.isEmpty {
-            el = app.descendants(matching: .any)[identifier].firstMatch
+            el = findElement(byIdentifier: identifier)
         } else if let label = command.params["label"]?.stringValue, !label.isEmpty {
-            el = app.descendants(matching: .any).matching(
-                NSPredicate(format: "label == %@", label)
-            ).firstMatch
+            el = findElement(byLabel: label)
         } else {
             return .failure(id: command.id, error: "Must provide identifier or label")
         }
 
-        let exists = el.waitForExistence(timeout: 3)
-
-        if !exists {
-            return .success(id: command.id, data: ["exists": false])
+        guard let el else {
+            var data: [String: JSONValue] = ["exists": false]
+            if let message = blockingModalMessage() {
+                data["blocked"] = true
+                data["message"] = .string(message)
+            }
+            return .success(id: command.id, data: data)
         }
 
         return .success(id: command.id, data: [
@@ -479,9 +490,30 @@ public final class CommandHandler {
         }
 
         let type = AccessibilityReader.elementType(from: typeName)
-        let count: Int
+        let modalCount: Int
 
         if let identifier = command.params["identifier"]?.stringValue, !identifier.isEmpty {
+            modalCount = modalQueries.reduce(0) { total, query in
+                total + query.query.descendants(matching: type).matching(
+                    NSPredicate(format: "identifier == %@", identifier)
+                ).count
+            }
+        } else if let label = command.params["label"]?.stringValue, !label.isEmpty {
+            modalCount = modalQueries.reduce(0) { total, query in
+                total + query.query.descendants(matching: type).matching(
+                    NSPredicate(format: "label == %@", label)
+                ).count
+            }
+        } else {
+            modalCount = modalQueries.reduce(0) { total, query in
+                total + query.query.descendants(matching: type).count
+            }
+        }
+
+        let count: Int
+        if modalCount > 0 || activeBlockingModal() != nil {
+            count = modalCount
+        } else if let identifier = command.params["identifier"]?.stringValue, !identifier.isEmpty {
             count = app.descendants(matching: type).matching(
                 NSPredicate(format: "identifier == %@", identifier)
             ).count
@@ -541,12 +573,31 @@ public final class CommandHandler {
         var modalType = "none"
 
         // Strategy 1: Dismiss alerts by tapping common button labels
-        let alert = app.alerts.firstMatch
-        if alert.waitForExistence(timeout: 0.5) {
-            modalType = "alert"
-            let buttonNames = ["OK", "Cancel", "Done", "Close", "Dismiss", "Yes", "No", "Got it"]
+        let alert = firstExistingModal(in: [
+            ("systemAlert", springboard.alerts),
+            ("alert", app.alerts),
+        ])
+        if let alert {
+            modalType = alert.typeName
+            let buttonNames = [
+                "Allow",
+                "Allow Once",
+                "Allow While Using App",
+                "Allow Full Access",
+                "Allow Access to All Photos",
+                "OK",
+                "Cancel",
+                "Done",
+                "Close",
+                "Dismiss",
+                "Yes",
+                "No",
+                "Got it",
+                "Don’t Allow",
+                "Don't Allow",
+            ]
             for name in buttonNames {
-                let button = alert.buttons[name]
+                let button = alert.element.buttons[name]
                 if button.exists {
                     button.tap()
                     dismissed = true
@@ -554,7 +605,7 @@ public final class CommandHandler {
                 }
             }
             if !dismissed {
-                let firstButton = alert.buttons.element(boundBy: 0)
+                let firstButton = alert.element.buttons.element(boundBy: 0)
                 if firstButton.exists {
                     firstButton.tap()
                     dismissed = true
@@ -564,12 +615,15 @@ public final class CommandHandler {
 
         // Strategy 2: Dismiss sheets by swiping down or tapping close buttons
         if !dismissed {
-            let sheet = app.sheets.firstMatch
-            if sheet.waitForExistence(timeout: 0.5) {
-                modalType = "sheet"
+            let sheet = firstExistingModal(in: [
+                ("systemSheet", springboard.sheets),
+                ("sheet", app.sheets),
+            ])
+            if let sheet {
+                modalType = sheet.typeName
                 let buttonNames = ["Cancel", "Done", "Close", "Dismiss"]
                 for name in buttonNames {
-                    let button = sheet.buttons[name]
+                    let button = sheet.element.buttons[name]
                     if button.exists {
                         button.tap()
                         dismissed = true
@@ -577,7 +631,7 @@ public final class CommandHandler {
                     }
                 }
                 if !dismissed {
-                    sheet.swipeDown()
+                    sheet.element.swipeDown()
                     dismissed = true
                 }
             }
@@ -585,9 +639,12 @@ public final class CommandHandler {
 
         // Strategy 3: Dismiss popovers by tapping outside
         if !dismissed {
-            let popover = app.popovers.firstMatch
-            if popover.waitForExistence(timeout: 0.5) {
-                modalType = "popover"
+            let popover = firstExistingModal(in: [
+                ("systemPopover", springboard.popovers),
+                ("popover", app.popovers),
+            ])
+            if let popover {
+                modalType = popover.typeName
                 let coord = app.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.1))
                 coord.tap()
                 dismissed = true
@@ -596,9 +653,12 @@ public final class CommandHandler {
 
         // Strategy 4: Dismiss context menus by tapping outside
         if !dismissed {
-            let menu = app.menus.firstMatch
-            if menu.waitForExistence(timeout: 0.5) {
-                modalType = "menu"
+            let menu = firstExistingModal(in: [
+                ("systemMenu", springboard.menus),
+                ("menu", app.menus),
+            ])
+            if let menu {
+                modalType = menu.typeName
                 let coord = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1))
                 coord.tap()
                 dismissed = true
@@ -615,18 +675,36 @@ public final class CommandHandler {
 
     private static let findTimeout: TimeInterval = 3
 
+    private struct ModalQuery {
+        let typeName: String
+        let query: XCUIElementQuery
+        let blocksAppInteraction: Bool
+    }
+
     /// Modal containers that live in separate window hierarchies.
     /// Querying app.descendants while these are presented can hang,
     /// so we check them first with short timeouts.
-    private var modalQueries: [XCUIElementQuery] {
-        [app.alerts, app.sheets, app.popovers, app.menus, app.datePickers]
+    private var modalQueries: [ModalQuery] {
+        [
+            ModalQuery(typeName: "systemAlert", query: springboard.alerts, blocksAppInteraction: true),
+            ModalQuery(typeName: "systemSheet", query: springboard.sheets, blocksAppInteraction: true),
+            ModalQuery(typeName: "systemPopover", query: springboard.popovers, blocksAppInteraction: true),
+            ModalQuery(typeName: "systemMenu", query: springboard.menus, blocksAppInteraction: true),
+            ModalQuery(typeName: "alert", query: app.alerts, blocksAppInteraction: true),
+            ModalQuery(typeName: "sheet", query: app.sheets, blocksAppInteraction: true),
+            ModalQuery(typeName: "popover", query: app.popovers, blocksAppInteraction: true),
+            ModalQuery(typeName: "menu", query: app.menus, blocksAppInteraction: true),
+            ModalQuery(typeName: "datePicker", query: app.datePickers, blocksAppInteraction: false),
+        ]
     }
 
     private func findElement(byIdentifier identifier: String) -> XCUIElement? {
-        for query in modalQueries {
-            let match = query.descendants(matching: .any)[identifier].firstMatch
+        for modalQuery in modalQueries {
+            let match = modalQuery.query.descendants(matching: .any)[identifier].firstMatch
             if match.waitForExistence(timeout: 0.5) { return match }
         }
+
+        guard activeBlockingModal() == nil else { return nil }
 
         let element = app.descendants(matching: .any)[identifier].firstMatch
         return element.waitForExistence(timeout: Self.findTimeout) ? element : nil
@@ -635,10 +713,12 @@ public final class CommandHandler {
     private func findElement(byLabel label: String) -> XCUIElement? {
         let predicate = NSPredicate(format: "label == %@", label)
 
-        for query in modalQueries {
-            let match = query.descendants(matching: .any).matching(predicate).firstMatch
+        for modalQuery in modalQueries {
+            let match = modalQuery.query.descendants(matching: .any).matching(predicate).firstMatch
             if match.waitForExistence(timeout: 0.5) { return match }
         }
+
+        guard activeBlockingModal() == nil else { return nil }
 
         let element = app.descendants(matching: .any).matching(predicate).firstMatch
         return element.waitForExistence(timeout: Self.findTimeout) ? element : nil
@@ -648,17 +728,84 @@ public final class CommandHandler {
         let type = AccessibilityReader.elementType(from: typeName)
 
         for query in modalQueries {
-            let modalQuery = query.descendants(matching: type)
-            if index < modalQuery.count {
-                let el = modalQuery.element(boundBy: index)
+            let elements = query.query.descendants(matching: type)
+            if index < elements.count {
+                let el = elements.element(boundBy: index)
                 if el.waitForExistence(timeout: 0.5) { return el }
             }
         }
+
+        guard activeBlockingModal() == nil else { return nil }
 
         let query = app.descendants(matching: type)
         guard index < query.count else { return nil }
         let el = query.element(boundBy: index)
         return el.waitForExistence(timeout: Self.findTimeout) ? el : nil
+    }
+
+    private func firstExistingModal(
+        in modalQueries: [(typeName: String, query: XCUIElementQuery)]
+    ) -> (typeName: String, element: XCUIElement)? {
+        for modalQuery in modalQueries {
+            let modal = modalQuery.query.firstMatch
+            if modal.waitForExistence(timeout: 0.5) {
+                return (modalQuery.typeName, modal)
+            }
+        }
+        return nil
+    }
+
+    private func activeBlockingModal() -> (typeName: String, element: XCUIElement)? {
+        for modalQuery in modalQueries where modalQuery.blocksAppInteraction {
+            let modal = modalQuery.query.firstMatch
+            if modal.exists {
+                return (modalQuery.typeName, modal)
+            }
+        }
+        return nil
+    }
+
+    private func elementNotFoundResponse(id: String) -> BridgeResponse {
+        if let message = blockingModalMessage() {
+            return .failure(id: id, error: message)
+        }
+        return .failure(id: id, error: "Element not found")
+    }
+
+    private func blockingModalMessage() -> String? {
+        guard let modal = activeBlockingModal() else { return nil }
+
+        let label = modal.element.label.trimmingCharacters(in: .whitespacesAndNewlines)
+        let buttonLabels = visibleButtonLabels(in: modal.element)
+        let buttons = buttonLabels.isEmpty ? "" : " Available buttons: \(buttonLabels.joined(separator: ", "))."
+        let modalLabel = label.isEmpty ? "" : " Visible modal: \(label)."
+
+        return "A \(modal.typeName) is blocking app interaction.\(modalLabel)\(buttons)"
+    }
+
+    private func visibleButtonLabels(in element: XCUIElement) -> [String] {
+        let buttons = element.buttons
+        var labels: [String] = []
+
+        for i in 0..<buttons.count {
+            let button = buttons.element(boundBy: i)
+            guard button.exists else { continue }
+            let label = button.label.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !label.isEmpty {
+                labels.append(label)
+            }
+        }
+
+        return labels
+    }
+
+    private func elementInfo(_ element: XCUIElement) -> JSONValue {
+        .object([
+            "type": .string(AccessibilityReader.elementTypeName(element.elementType)),
+            "identifier": .string(element.identifier),
+            "label": .string(element.label),
+            "value": .string(element.value as? String ?? ""),
+        ])
     }
 }
 #endif
